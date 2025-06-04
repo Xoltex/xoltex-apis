@@ -1,4 +1,4 @@
-name: Create or Update API Gateway
+name: Crear API Gateway si no existe
 
 on:
   push:
@@ -11,88 +11,63 @@ env:
   AWS_REGION: us-east-1
 
 jobs:
-  deploy_or_update:
+  crear-api:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout código
         uses: actions/checkout@v3
 
-      - name: Instalar jq y yq correcto
+      - name: Instalar herramientas
         run: |
           sudo apt-get update && sudo apt-get install -y jq
           curl -Lo /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
           chmod +x /usr/local/bin/yq
 
-
-      - name: Detectar archivo YAML y extraer nombre de API
+      - name: Extraer nombre de API desde YAML
         id: preparar
         run: |
           FILE=$(ls *.yaml | head -n 1)
-          echo "📄 Archivo YAML detectado: $FILE"
+          echo "📄 Usando archivo: $FILE"
           echo "api_file=$FILE" >> $GITHUB_OUTPUT
 
-          NAME="$(yq eval '.info.title' "$FILE")"
-          echo "📛 Nombre de la API: $NAME"
+          NAME="$(yq '.info.title' "$FILE")"
+          echo "📛 Nombre detectado: $NAME"
           echo "api_name=$NAME" >> $GITHUB_OUTPUT
 
       - name: Verificar si la API ya existe
-        id: buscar
         run: |
-          NAME="$(yq eval '.info.title' "${{ steps.preparar.outputs.api_file }}")"
-          echo "📛 API name extraído: $NAME"
-
-          ID=$(aws apigateway get-rest-apis \
+          NAME="${{ steps.preparar.outputs.api_name }}"
+          EXISTING=$(aws apigateway get-rest-apis \
             --query "items[?name=='${NAME}'].id" \
             --output text \
             --region $AWS_REGION || true)
 
-          if [ -z "$ID" ]; then
-            echo "🆕 API no existe. Se creará."
-            echo "found=false" >> $GITHUB_OUTPUT
+          if [ -n "$EXISTING" ]; then
+            echo "❌ La API '$NAME' ya existe con ID: $EXISTING"
+            exit 1
           else
-            echo "♻️ API ya existe con ID: $ID"
-            echo "api_id=$ID" >> $GITHUB_OUTPUT
-            echo "found=true" >> $GITHUB_OUTPUT
+            echo "✅ API '$NAME' no existe. Procediendo a crear."
           fi
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Crear o actualizar la API
-        id: procesar
+      - name: Crear nueva API y desplegar
         run: |
           FILE=${{ steps.preparar.outputs.api_file }}
-          NAME=${{ steps.preparar.outputs.api_name }}
-          REGION=$AWS_REGION
+          echo "🚀 Creando API desde $FILE"
 
-          if [ "${{ steps.buscar.outputs.found }}" = "false" ]; then
-            echo "🚧 Creando nueva API '$NAME'"
-            RESPONSE=$(aws apigateway import-rest-api \
-              --body fileb://$FILE \
-              --parameters endpointConfigurationTypes=REGIONAL \
-              --region $REGION)
-            echo "$RESPONSE" > response.json
-            API_ID=$(jq -r '.id' response.json)
-          else
-            API_ID=${{ steps.buscar.outputs.api_id }}
-            echo "🔄 Actualizando API '$NAME' con ID $API_ID"
-            aws apigateway put-rest-api \
-              --rest-api-id "$API_ID" \
-              --mode overwrite \
-              --body fileb://$FILE \
-              --region $REGION
-          fi
+          RESPONSE=$(aws apigateway import-rest-api \
+            --body fileb://$FILE \
+            --parameters endpointConfigurationTypes=REGIONAL \
+            --region $AWS_REGION)
 
-          echo "api_id=$API_ID" >> $GITHUB_OUTPUT
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          echo "$RESPONSE" > response.json
+          API_ID=$(jq -r '.id' response.json)
 
-      - name: Desplegar en stage prod
-        run: |
-          API_ID=${{ steps.procesar.outputs.api_id }}
-          echo "🚀 Desplegando API ID: $API_ID en stage 'prod'"
+          echo "✅ API creada con ID: $API_ID"
+
           aws apigateway create-deployment \
             --rest-api-id "$API_ID" \
             --stage-name prod \
