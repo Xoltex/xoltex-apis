@@ -1,15 +1,102 @@
-name: Test API Workflow Trigger
+name: Deploy API Gateways from Swagger
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - '*.yaml'
 
 jobs:
-  test:
+  deploy:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        api_file: [usuarios-api.yaml, cupones-api.yaml]  # Agrega aquí todos tus contratos
+
     steps:
-      - name: Debug paso inicial
-        run: echo "✅ Workflow disparado correctamente"
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y yq jq
+
+      - name: Detect file changes
+        id: changes
+        run: |
+          echo "Diffing from ${{ github.event.before }} to ${{ github.sha }}"
+          FILE_CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep "${{ matrix.api_file }}" || true)
+
+          if [ -n "$FILE_CHANGED" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Skip if not changed
+        if: steps.changes.outputs.changed == 'false'
+        run: |
+          echo "❌ No hay cambios en ${{ matrix.api_file }}, saltando despliegue."
+          exit 0
+
+      - name: Get API name from YAML
+        id: apiname
+        run: |
+          API_NAME=$(yq eval '.info.title' "${{ matrix.api_file }}")
+          echo "📛 API extraída: $API_NAME"
+          echo "api_name=$API_NAME" >> $GITHUB_OUTPUT
+
+      - name: Check if API exists
+        id: check
+        run: |
+          API_NAME="${{ steps.apiname.outputs.api_name }}"
+          REST_API_ID=$(aws apigateway get-rest-apis \
+            --query "items[?name=='$API_NAME'].id" \
+            --output text \
+            --region us-east-1)
+          echo "api_id=$REST_API_ID" >> $GITHUB_OUTPUT
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Create or Update API Gateway
+        run: |
+          API_NAME="${{ steps.apiname.outputs.api_name }}"
+          API_FILE="${{ matrix.api_file }}"
+          REGION="us-east-1"
+
+          if [ -z "${{ steps.check.outputs.api_id }}" ]; then
+            echo "🆕 Creando API '$API_NAME'..."
+            REST_API_ID=$(aws apigateway import-rest-api \
+              --parameters endpointConfigurationTypes=REGIONAL \
+              --fail-on-warnings \
+              --body fileb://$API_FILE \
+              --region $REGION | jq -r '.id')
+            echo "✅ API creada con ID: $REST_API_ID"
+          else
+            echo "♻️ Actualizando API '$API_NAME'..."
+            aws apigateway put-rest-api \
+              --rest-api-id "${{ steps.check.outputs.api_id }}" \
+              --mode overwrite \
+              --fail-on-warnings \
+              --body fileb://$API_FILE \
+              --region $REGION
+            REST_API_ID="${{ steps.check.outputs.api_id }}"
+          fi
+
+          echo "api_id=$REST_API_ID" >> $GITHUB_ENV
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Deploy to prod
+        run: |
+          echo "🚀 Desplegando API ID: $api_id en stage 'prod'"
+          aws apigateway create-deployment \
+            --rest-api-id "$api_id" \
+            --stage-name prod \
+            --region us-east-1
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
