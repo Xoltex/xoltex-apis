@@ -12,4 +12,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Debug paso inicial
-        run: echo "✅ Workflow disparado correctamente"
+        run: echo "✅ Workflow disparado correctamente" 
