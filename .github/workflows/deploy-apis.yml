@@ -27,9 +27,9 @@ jobs:
       - name: Check if contract was changed
         id: file-check
         run: |
-          git fetch origin main --depth=2
-          CHANGED=$(git diff --name-only HEAD^ HEAD | grep "${{ matrix.api_file }}" || true)
+          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep "${{ matrix.api_file }}" || true)
           echo "changed=$CHANGED" >> $GITHUB_OUTPUT
+
 
       - name: Skip if file not changed
         if: steps.file-check.outputs.changed == ''
