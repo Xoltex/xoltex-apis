@@ -38,8 +38,9 @@ jobs:
         run: echo "Archivo '${{ matrix.api_file }}' cambiado: ${{ steps.check_changes.outputs.changed }}"
 
       - name: Exit early if not changed
-        if: ${{ steps.check_changes.outputs.changed == 'false' }}
+        if: steps.check_changes.outputs.changed == 'false'
         run: echo "❌ No se detectaron cambios. Saltando job." && exit 0
+
 
       - name: Extraer nombre de API
         id: apiname
