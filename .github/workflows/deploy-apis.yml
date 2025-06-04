@@ -1,17 +1,18 @@
-name: Deploy New API to API Gateway
+name: Deploy New API
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
       - '*.yaml'
 
 jobs:
-  deploy-new-api:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repo
         uses: actions/checkout@v3
 
       - name: Install yq and jq
@@ -19,32 +20,33 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y yq jq
 
-      - name: Find the YAML file (assumes only one new API at a time)
-        id: find_file
+      - name: Get first YAML file
+        id: get_file
         run: |
           FILE=$(ls *.yaml | head -n 1)
+          echo "Usando archivo: $FILE"
           echo "api_file=$FILE" >> $GITHUB_OUTPUT
 
-      - name: Extract API name from contract
-        id: extract_name
+      - name: Get API name from YAML
+        id: get_name
         run: |
-          API_NAME=$(yq eval '.info.title' "${{ steps.find_file.outputs.api_file }}")
-          echo "📛 API Name: $API_NAME"
-          echo "api_name=$API_NAME" >> $GITHUB_OUTPUT
+          NAME=$(yq eval '.info.title' "${{ steps.get_file.outputs.api_file }}")
+          echo "API name: $NAME"
+          echo "api_name=$NAME" >> $GITHUB_OUTPUT
 
-      - name: Import and deploy API
+      - name: Import API to API Gateway
         run: |
-          FILE=${{ steps.find_file.outputs.api_file }}
-          echo "Importing $FILE as API ${{ steps.extract_name.outputs.api_name }}"
-          
+          FILE=${{ steps.get_file.outputs.api_file }}
+          echo "Importando API desde archivo: $FILE"
+
           RESPONSE=$(aws apigateway import-rest-api \
-            --fail-on-warnings \
-            --parameters endpointConfigurationTypes=REGIONAL \
             --body fileb://$FILE \
+            --parameters endpointConfigurationTypes=REGIONAL \
             --region us-east-1)
 
-          API_ID=$(echo $RESPONSE | jq -r '.id')
-          echo "✅ API creada con ID: $API_ID"
+          echo "$RESPONSE" > response.json
+          API_ID=$(jq -r '.id' response.json)
+          echo "API ID: $API_ID"
 
           aws apigateway create-deployment \
             --rest-api-id "$API_ID" \
