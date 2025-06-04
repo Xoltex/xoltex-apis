@@ -32,7 +32,7 @@ jobs:
           echo "📄 Archivo YAML detectado: $FILE"
           echo "api_file=$FILE" >> $GITHUB_OUTPUT
 
-          NAME=$(yq eval '.info.title' "$FILE")
+          NAME="$(yq eval '.info.title' "$FILE")"
           echo "📛 Nombre de la API: $NAME"
           echo "api_name=$NAME" >> $GITHUB_OUTPUT
 
