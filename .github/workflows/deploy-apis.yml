@@ -35,7 +35,10 @@ jobs:
           fi
 
       - name: Debug file check
-        run: echo "Archivo '${{ matrix.api_file }}' cambiado: ${{ steps.check_changes.outputs.changed }}"
+        run: |
+          echo "Archivo cambiado:"
+          echo "${{ matrix.api_file }} => ${{ steps.check_changes.outputs.changed }}"
+
 
       - name: Exit early if not changed
         if: steps.check_changes.outputs.changed == 'false'
