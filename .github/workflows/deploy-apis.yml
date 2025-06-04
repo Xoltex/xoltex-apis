@@ -2,19 +2,14 @@ name: Deploy API Básico
 
 on:
   push:
-    paths:
-      - '*/**'
     branches:
       - main
-
-env:
-  AWS_REGION: us-east-1
-  API_FILE: test-api.yaml  # 👈 Pon aquí el nombre de tu contrato
+    paths:
+      - '*.yaml'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout código
         uses: actions/checkout@v3
@@ -24,12 +19,13 @@ jobs:
 
       - name: Subir API a API Gateway
         run: |
-          echo "📄 Usando archivo: $API_FILE"
+          FILE=$(ls *.yaml | head -n 1)
+          echo "📄 Usando archivo: $FILE"
 
           RESPONSE=$(aws apigateway import-rest-api \
-            --body fileb://$API_FILE \
+            --body fileb://$FILE \
             --parameters endpointConfigurationTypes=REGIONAL \
-            --region $AWS_REGION)
+            --region us-east-1)
 
           echo "$RESPONSE" > response.json
           API_ID=$(jq -r '.id' response.json)
@@ -39,7 +35,7 @@ jobs:
           aws apigateway create-deployment \
             --rest-api-id "$API_ID" \
             --stage-name prod \
-            --region $AWS_REGION
+            --region us-east-1
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
