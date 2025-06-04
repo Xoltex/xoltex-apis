@@ -1,11 +1,11 @@
-name: Test API Workflow Trigger
+name: Deploy Apis
 
 on:
   push:
+    paths:
+      - '*/**'
     branches:
       - main
-    paths:
-      - '*.yaml'
 
 jobs:
   test:
