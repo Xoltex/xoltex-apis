@@ -1,4 +1,4 @@
-name: Deploy Single API (manual name)
+name: Test API Workflow Trigger
 
 on:
   push:
@@ -7,47 +7,9 @@ on:
     paths:
       - '*.yaml'
 
-env:
-  AWS_REGION: us-east-1
-  API_NAME: "API Clientes"  # ✅ Pon aquí el nombre manualmente
-
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: Find YAML file
-        id: find_yaml
-        run: |
-          FILE=$(ls *.yaml | head -n 1)
-          echo "api_file=$FILE" >> $GITHUB_OUTPUT
-
-      - name: Import and deploy API
-        run: |
-          FILE=${{ steps.find_yaml.outputs.api_file }}
-          echo "🛠️ Importando API $API_NAME desde archivo $FILE"
-
-          RESPONSE=$(aws apigateway import-rest-api \
-            --fail-on-warnings \
-            --parameters endpointConfigurationTypes=REGIONAL \
-            --body fileb://$FILE \
-            --region $AWS_REGION)
-
-          echo "$RESPONSE" > response.json
-          API_ID=$(jq -r '.id' response.json)
-
-          echo "✅ API creada con ID: $API_ID"
-
-          aws apigateway create-deployment \
-            --rest-api-id "$API_ID" \
-            --stage-name prod \
-            --region $AWS_REGION
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Debug paso inicial
+        run: echo "✅ Workflow disparado correctamente"
