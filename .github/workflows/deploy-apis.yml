@@ -2,17 +2,17 @@ name: Deploy API Gateways from Swagger
 
 on:
   push:
-    paths:
-      - '*.yaml'
     branches:
       - main
+    paths:
+      - '*.yaml'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        api_file: [usuarios-api.yaml, cupones-api.yaml]  # Agrega aquí tus contratos
+        api_file: [usuarios-api.yaml, cupones-api.yaml]
 
     steps:
       - name: Checkout code
@@ -20,78 +20,77 @@ jobs:
 
       - name: Install yq
         run: |
-          sudo add-apt-repository -y ppa:rmescandon/yq
-          sudo apt update
-          sudo apt install yq -y
+          sudo apt-get update
+          sudo apt-get install -y yq jq
 
-      - name: Check if contract was changed
-        id: file-check
+      - name: Detect file changes
+        id: changes
         run: |
-          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep "${{ matrix.api_file }}" || true)
-          echo "changed=$CHANGED" >> $GITHUB_OUTPUT
+          echo "Checking changes between ${{ github.event.before }} and ${{ github.sha }}"
+          FILE_CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep "${{ matrix.api_file }}" || true)
+          echo "changed=$FILE_CHANGED" >> $GITHUB_OUTPUT
 
+      - name: Skip if no change
+        if: steps.changes.outputs.changed == ''
+        run: echo "❌ ${{ matrix.api_file }} no cambió, omitiendo despliegue." && exit 0
 
-      - name: Skip if file not changed
-        if: steps.file-check.outputs.changed == ''
-        run: echo "❌ ${{ matrix.api_file }} no cambió. Saltando despliegue..." && exit 0
-
-      - name: Extract API name from OpenAPI spec
-        id: extract
+      - name: Get API name from file
+        id: apiname
         run: |
-          API_NAME=$(yq e '.info.title' "${{ matrix.api_file }}")
+          API_NAME=$(yq eval '.info.title' "${{ matrix.api_file }}")
           echo "api_name=$API_NAME" >> $GITHUB_OUTPUT
 
       - name: Check if API exists
         id: check
         run: |
-          API_NAME="${{ steps.extract.outputs.api_name }}"
+          API_NAME="${{ steps.apiname.outputs.api_name }}"
           REST_API_ID=$(aws apigateway get-rest-apis \
             --query "items[?name=='$API_NAME'].id" \
             --output text \
             --region us-east-1)
-
           echo "api_id=$REST_API_ID" >> $GITHUB_OUTPUT
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Create or update API
+      - name: Create or Update API
+        id: deploy
         run: |
-          API_NAME="${{ steps.extract.outputs.api_name }}"
-          API_ID="${{ steps.check.outputs.api_id }}"
-          
-          if [ -z "$API_ID" ]; then
-            echo "🔧 API '$API_NAME' no existe. Creando..."
+          API_NAME="${{ steps.apiname.outputs.api_name }}"
+          API_FILE="${{ matrix.api_file }}"
+          REGION="us-east-1"
+
+          if [ -z "${{ steps.check.outputs.api_id }}" ]; then
+            echo "🆕 Creando API '$API_NAME' desde archivo '$API_FILE'"
             REST_API_ID=$(aws apigateway import-rest-api \
               --parameters endpointConfigurationTypes=REGIONAL \
               --fail-on-warnings \
-              --body fileb://${{ matrix.api_file }} \
-              --region us-east-1 \
+              --body fileb://$API_FILE \
+              --region $REGION \
               --output json | jq -r '.id')
             echo "✅ API creada con ID: $REST_API_ID"
           else
-            echo "♻️ API '$API_NAME' existe (ID: $API_ID). Actualizando..."
+            echo "♻️ Actualizando API '$API_NAME' con ID ${{ steps.check.outputs.api_id }}"
             aws apigateway put-rest-api \
-              --rest-api-id "$API_ID" \
+              --rest-api-id "${{ steps.check.outputs.api_id }}" \
               --mode overwrite \
               --fail-on-warnings \
-              --body fileb://${{ matrix.api_file }} \
-              --region us-east-1
-            REST_API_ID=$API_ID
+              --body fileb://$API_FILE \
+              --region $REGION
+            REST_API_ID="${{ steps.check.outputs.api_id }}"
           fi
-
           echo "api_id=$REST_API_ID" >> $GITHUB_ENV
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Deploy to prod stage 
+      - name: Deploy to prod
         run: |
+          echo "🚀 Desplegando API ID: $api_id en stage 'prod'"
           aws apigateway create-deployment \
             --rest-api-id "$api_id" \
             --stage-name prod \
             --region us-east-1
-          echo "🚀 Despliegue realizado en stage 'prod'."
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
