@@ -39,7 +39,9 @@ jobs:
 
       - name: Exit early if not changed
         if: steps.check_changes.outputs.changed == 'false'
-        run: echo "❌ No se detectaron cambios. Saltando job." && exit 0
+        run: |
+          echo "❌ No se detectaron cambios. Saltando job."
+          exit 0
 
 
       - name: Extraer nombre de API
