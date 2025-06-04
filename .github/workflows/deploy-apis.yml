@@ -1,4 +1,4 @@
-name: Deploy New API
+name: Deploy Single API (manual name)
 
 on:
   push:
@@ -6,6 +6,10 @@ on:
       - main
     paths:
       - '*.yaml'
+
+env:
+  AWS_REGION: us-east-1
+  API_NAME: "API Clientes"  # ✅ Pon aquí el nombre manualmente
 
 jobs:
   deploy:
@@ -15,43 +19,35 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Install yq and jq
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y yq jq
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Get first YAML file
-        id: get_file
+      - name: Find YAML file
+        id: find_yaml
         run: |
           FILE=$(ls *.yaml | head -n 1)
-          echo "Usando archivo: $FILE"
           echo "api_file=$FILE" >> $GITHUB_OUTPUT
 
-      - name: Get API name from YAML
-        id: get_name
+      - name: Import and deploy API
         run: |
-          NAME=$(yq eval '.info.title' "${{ steps.get_file.outputs.api_file }}")
-          echo "API name: $NAME"
-          echo "api_name=$NAME" >> $GITHUB_OUTPUT
-
-      - name: Import API to API Gateway
-        run: |
-          FILE=${{ steps.get_file.outputs.api_file }}
-          echo "Importando API desde archivo: $FILE"
+          FILE=${{ steps.find_yaml.outputs.api_file }}
+          echo "🛠️ Importando API $API_NAME desde archivo $FILE"
 
           RESPONSE=$(aws apigateway import-rest-api \
-            --body fileb://$FILE \
+            --fail-on-warnings \
             --parameters endpointConfigurationTypes=REGIONAL \
-            --region us-east-1)
+            --body fileb://$FILE \
+            --region $AWS_REGION)
 
           echo "$RESPONSE" > response.json
           API_ID=$(jq -r '.id' response.json)
-          echo "API ID: $API_ID"
+
+          echo "✅ API creada con ID: $API_ID"
 
           aws apigateway create-deployment \
             --rest-api-id "$API_ID" \
             --stage-name prod \
-            --region us-east-1
+            --region $AWS_REGION
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
