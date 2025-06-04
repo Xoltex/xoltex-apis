@@ -9,7 +9,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  API_FILE: api-clientes.yaml  # 👈 Pon aquí el nombre de tu contrato
+  API_FILE: test-api.yaml  # 👈 Pon aquí el nombre de tu contrato
 
 jobs:
   deploy:
