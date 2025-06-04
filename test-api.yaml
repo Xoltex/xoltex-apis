@@ -6,7 +6,7 @@ paths:
   /clientes:
     get:  
       summary: Obtener clientes
-      responses:
+      responses: 
         '200':
           description: OK 
       x-amazon-apigateway-integration:
