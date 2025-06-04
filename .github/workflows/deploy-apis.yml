@@ -1,0 +1,43 @@
+name: Deploy API Gateways
+
+on:
+  push:
+    paths:
+      - '*.yaml'
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        api_file: [usuarios-api.yaml, cupones-api.yaml]  # Lista de contratos que deseas monitorear
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Check if API contract was modified
+        if: contains(github.event.head_commit.message, matrix.api_file) == false
+        run: echo "❌ Commit no modifica ${matrix.api_file}, omitiendo despliegue..." && exit 0
+
+      - name: Deploy API Gateway
+        run: |
+          API_NAME=$(basename ${{ matrix.api_file }} .yaml)
+          aws apigateway import-rest-api \
+            --fail-on-warnings \
+            --parameters endpointConfigurationTypes=REGIONAL \
+            --body fileb://${{ matrix.api_file }} \
+            --region us-east-1 > api.json
+
+          REST_API_ID=$(jq -r '.id' api.json)
+          echo "🔁 API ID creado/importado: $REST_API_ID"
+
+          aws apigateway create-deployment \
+            --rest-api-id "$REST_API_ID" \
+            --stage-name prod \
+            --region us-east-1
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
