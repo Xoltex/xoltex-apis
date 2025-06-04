@@ -20,7 +20,7 @@ jobs:
 
       - name: Check if API contract was modified
         if: contains(github.event.head_commit.message, matrix.api_file) == false
-        run: echo "❌ Commit no modifica ${matrix.api_file}, omitiendo despliegue..." && exit 0
+        run: echo "❌ Commit no modifica ${{ matrix.api_file }}, omitiendo despliegue..." && exit 0
 
       - name: Deploy API Gateway
         run: |
