@@ -25,7 +25,7 @@ jobs:
       - name: Deploy API Gateway
         run: |
           API_NAME=$(basename ${{ matrix.api_file }} .yaml)
-          aws apigateway import-rest-api \
+          aws apigateway import-rest-api \ 
             --fail-on-warnings \
             --parameters endpointConfigurationTypes=REGIONAL \
             --body fileb://${{ matrix.api_file }} \
