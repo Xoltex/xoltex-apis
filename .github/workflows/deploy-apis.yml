@@ -1,4 +1,4 @@
-name: Deploy new API Gateway
+name: Deploy New API to API Gateway
 
 on:
   push:
@@ -7,40 +7,47 @@ on:
       - '*.yaml'
 
 jobs:
-  deploy:
+  deploy-new-api:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y yq jq
-
-      - name: Detect API name
-        id: apiname
+      - name: Install yq and jq
         run: |
-          API_NAME=$(yq '.info.title' *.yaml)
+          sudo apt-get update
+          sudo apt-get install -y yq jq
+
+      - name: Find the YAML file (assumes only one new API at a time)
+        id: find_file
+        run: |
+          FILE=$(ls *.yaml | head -n 1)
+          echo "api_file=$FILE" >> $GITHUB_OUTPUT
+
+      - name: Extract API name from contract
+        id: extract_name
+        run: |
+          API_NAME=$(yq eval '.info.title' "${{ steps.find_file.outputs.api_file }}")
+          echo "📛 API Name: $API_NAME"
           echo "api_name=$API_NAME" >> $GITHUB_OUTPUT
 
-      - name: Import API Gateway
+      - name: Import and deploy API
         run: |
-          API_FILE=$(ls *.yaml)
-          API_NAME="${{ steps.apiname.outputs.api_name }}"
-          echo "Importando API $API_NAME desde $API_FILE"
-
-          aws apigateway import-rest-api \
+          FILE=${{ steps.find_file.outputs.api_file }}
+          echo "Importing $FILE as API ${{ steps.extract_name.outputs.api_name }}"
+          
+          RESPONSE=$(aws apigateway import-rest-api \
             --fail-on-warnings \
             --parameters endpointConfigurationTypes=REGIONAL \
-            --body fileb://$API_FILE \
-            --region us-east-1 \
-            --output json > response.json
+            --body fileb://$FILE \
+            --region us-east-1)
 
-          REST_API_ID=$(jq -r '.id' response.json)
-          echo "✅ API creada con ID: $REST_API_ID"
+          API_ID=$(echo $RESPONSE | jq -r '.id')
+          echo "✅ API creada con ID: $API_ID"
 
           aws apigateway create-deployment \
-            --rest-api-id "$REST_API_ID" \
+            --rest-api-id "$API_ID" \
             --stage-name prod \
             --region us-east-1
         env:
