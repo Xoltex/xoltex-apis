@@ -1,4 +1,4 @@
-name: Deploy API Gateways
+name: Deploy API Gateways from Swagger
 
 on:
   push:
@@ -12,32 +12,86 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        api_file: [usuarios-api.yaml, cupones-api.yaml]  # Lista de contratos que deseas monitorear
+        api_file: [usuarios-api.yaml, cupones-api.yaml]  # Agrega aquí tus contratos
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Check if API contract was modified
-        if: contains(github.event.head_commit.message, matrix.api_file) == false
-        run: echo "❌ Commit no modifica ${{ matrix.api_file }}, omitiendo despliegue..." && exit 0
-
-      - name: Deploy API Gateway
+      - name: Install yq
         run: |
-          API_NAME=$(basename ${{ matrix.api_file }} .yaml)
-          aws apigateway import-rest-api \ 
-            --fail-on-warnings \
-            --parameters endpointConfigurationTypes=REGIONAL \
-            --body fileb://${{ matrix.api_file }} \
-            --region us-east-1 > api.json
+          sudo add-apt-repository -y ppa:rmescandon/yq
+          sudo apt update
+          sudo apt install yq -y
 
-          REST_API_ID=$(jq -r '.id' api.json)
-          echo "🔁 API ID creado/importado: $REST_API_ID"
+      - name: Check if contract was changed
+        id: file-check
+        run: |
+          git fetch origin main --depth=2
+          CHANGED=$(git diff --name-only HEAD^ HEAD | grep "${{ matrix.api_file }}" || true)
+          echo "changed=$CHANGED" >> $GITHUB_OUTPUT
 
+      - name: Skip if file not changed
+        if: steps.file-check.outputs.changed == ''
+        run: echo "❌ ${{ matrix.api_file }} no cambió. Saltando despliegue..." && exit 0
+
+      - name: Extract API name from OpenAPI spec
+        id: extract
+        run: |
+          API_NAME=$(yq e '.info.title' "${{ matrix.api_file }}")
+          echo "api_name=$API_NAME" >> $GITHUB_OUTPUT
+
+      - name: Check if API exists
+        id: check
+        run: |
+          API_NAME="${{ steps.extract.outputs.api_name }}"
+          REST_API_ID=$(aws apigateway get-rest-apis \
+            --query "items[?name=='$API_NAME'].id" \
+            --output text \
+            --region us-east-1)
+
+          echo "api_id=$REST_API_ID" >> $GITHUB_OUTPUT
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Create or update API
+        run: |
+          API_NAME="${{ steps.extract.outputs.api_name }}"
+          API_ID="${{ steps.check.outputs.api_id }}"
+          
+          if [ -z "$API_ID" ]; then
+            echo "🔧 API '$API_NAME' no existe. Creando..."
+            REST_API_ID=$(aws apigateway import-rest-api \
+              --parameters endpointConfigurationTypes=REGIONAL \
+              --fail-on-warnings \
+              --body fileb://${{ matrix.api_file }} \
+              --region us-east-1 \
+              --output json | jq -r '.id')
+            echo "✅ API creada con ID: $REST_API_ID"
+          else
+            echo "♻️ API '$API_NAME' existe (ID: $API_ID). Actualizando..."
+            aws apigateway put-rest-api \
+              --rest-api-id "$API_ID" \
+              --mode overwrite \
+              --fail-on-warnings \
+              --body fileb://${{ matrix.api_file }} \
+              --region us-east-1
+            REST_API_ID=$API_ID
+          fi
+
+          echo "api_id=$REST_API_ID" >> $GITHUB_ENV
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Deploy to prod stage
+        run: |
           aws apigateway create-deployment \
-            --rest-api-id "$REST_API_ID" \
+            --rest-api-id "$api_id" \
             --stage-name prod \
             --region us-east-1
+          echo "🚀 Despliegue realizado en stage 'prod'."
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
