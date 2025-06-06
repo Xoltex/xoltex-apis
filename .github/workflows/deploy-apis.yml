@@ -9,6 +9,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
+  ACCOUNT_ID: 234026641893  # ✅ Tu número de cuenta
 
 jobs:
   crear-api:
@@ -54,6 +55,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Crear nueva API y desplegar
+        id: crear_api
         run: |
           FILE=${{ steps.preparar.outputs.api_file }}
           echo "🚀 Creando API desde $FILE"
@@ -65,6 +67,7 @@ jobs:
 
           echo "$RESPONSE" > response.json
           API_ID=$(jq -r '.id' response.json)
+          echo "api_id=$API_ID" >> $GITHUB_OUTPUT
 
           echo "✅ API creada con ID: $API_ID"
 
@@ -73,5 +76,46 @@ jobs:
             --stage-name prod \
             --region $AWS_REGION
         env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Otorgar permiso a Lambda
+        run: |
+          FILE=${{ steps.preparar.outputs.api_file }}
+          API_ID=${{ steps.crear_api.outputs.api_id }}
+
+          FUNC_ARN=$(yq '.paths.*.*."x-amazon-apigateway-integration".uri' "$FILE" | head -n 1)
+          FUNC_NAME=$(echo "$FUNC_ARN" | cut -d':' -f 7 | cut -d'/' -f 1)
+          METHOD=$(yq 'paths | select(.[1] == "x-amazon-apigateway-integration") | .[2]' "$FILE" | head -n 1 | tr -d '"')
+          RESOURCE_PATH=$(yq 'paths | select(.[1] == "x-amazon-apigateway-integration") | .[0]' "$FILE" | head -n 1 | tr -d '"')
+
+          echo "🧠 Lambda detectada: $FUNC_NAME"
+          echo "🧠 Método detectado: $METHOD"
+          echo "🧠 Path detectado: $RESOURCE_PATH"
+
+          SOURCE_ARN="arn:aws:execute-api:$AWS_REGION:$ACCOUNT_ID:$API_ID/*/$METHOD$RESOURCE_PATH"
+          echo "🔐 Asignando permiso con ARN: $SOURCE_ARN"
+
+          EXISTING=$(aws lambda get-policy \
+            --function-name "$FUNC_NAME" \
+            --region "$AWS_REGION" \
+            --query "Policy" \
+            --output text 2>/dev/null || true)
+
+          if echo "$EXISTING" | grep -q "$SOURCE_ARN"; then
+            echo "✅ Permiso ya existe, se omite."
+          else
+            aws lambda add-permission \
+              --function-name "$FUNC_NAME" \
+              --statement-id "allow-apigw-${API_ID}-${METHOD}" \
+              --action lambda:InvokeFunction \
+              --principal apigateway.amazonaws.com \
+              --source-arn "$SOURCE_ARN" \
+              --region "$AWS_REGION"
+            echo "✅ Permiso otorgado a Lambda '$FUNC_NAME'"
+          fi
+        env:
+          AWS_REGION: us-east-1
+          ACCOUNT_ID: 234026641893
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
