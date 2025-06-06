@@ -11,7 +11,7 @@ paths:
         '200':
           description: Llaves generadas exitosamente
           content:
-            application/json:
+            application/json: 
               schema: 
                 type: object
                 properties:
