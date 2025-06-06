@@ -1,0 +1,41 @@
+openapi: 3.0.1
+info:
+  title: API Obtener Llaves
+  version: "1.0"
+paths:
+  /v1/llaves:
+    post:
+      summary: Generar llaves RSA y AES
+      description: Devuelve llaves RSA (pública y privada), clave AES-256 y un ID de acceso único.
+      responses:
+        '200':
+          description: Llaves generadas exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  idAcceso:
+                    type: string
+                    format: uuid
+                  rsa:
+                    type: object
+                    properties:
+                      publicKey:
+                        type: string
+                      privateKey:
+                        type: string
+                  aes:
+                    type: object
+                    properties:
+                      key:
+                        type: string
+                      algorithm:
+                        type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+      x-amazon-apigateway-integration:
+        uri: arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:234026641893:function:lbd-xoltex-generar-py-llaves/invocations
+        httpMethod: POST
+        type: aws_proxy
