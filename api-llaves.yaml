@@ -15,7 +15,7 @@ paths:
               schema: 
                 type: object
                 properties:
-                  idAcceso:
+                  idAcceso: 
                     type: string
                     format: uuid
                   rsa:
