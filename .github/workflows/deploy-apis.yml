@@ -9,7 +9,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ACCOUNT_ID: 234026641893  # ✅ Tu número de cuenta
+  ACCOUNT_ID: 234026641893   # ✅ Tu número de cuenta
 
 jobs:
   crear-api:
