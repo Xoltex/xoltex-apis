@@ -16,7 +16,7 @@ paths:
                 type: object
                 properties:
                   idAcceso: 
-                    type: string
+                    type: string 
                     format: uuid
                   rsa:
                     type: object 
