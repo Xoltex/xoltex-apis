@@ -12,7 +12,7 @@ paths:
           description: Llaves generadas exitosamente
           content:
             application/json:
-              schema:
+              schema: 
                 type: object
                 properties:
                   idAcceso:
